@@ -2,5 +2,5 @@ fastapi
 uvicorn[standard]
 httpx
 PyJWT[crypto]
-anthropic
+openai
 pydantic

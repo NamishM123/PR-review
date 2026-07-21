@@ -3,10 +3,10 @@
 import json
 import os
 
-import anthropic
+from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
-MODEL = os.environ.get("SENTINEL_MODEL", "claude-sonnet-5")
+MODEL = os.environ.get("SENTINEL_MODEL", "gpt-4o")
 MAX_DIFF_CHARS = 60_000  # naive chunking guard for milestone 2
 
 
@@ -52,15 +52,20 @@ async def review_pull_request(diff: str, files: list[dict]) -> Review:
         # Milestone 4: chunk per-file and merge reviews. For now, truncate.
         diff = diff[:MAX_DIFF_CHARS] + "\n... [diff truncated]"
 
-    client = anthropic.AsyncAnthropic()  # reads ANTHROPIC_API_KEY from env
-    message = await client.messages.create(
+    client = AsyncOpenAI()  # reads OPENAI_API_KEY from env
+    response = await client.chat.completions.create(
         model=MODEL,
         max_tokens=2000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Review this diff:\n\n{diff}"}],
+        response_format={"type": "json_object"},  # ask OpenAI to guarantee valid JSON
+        messages=[
+            # OpenAI carries the system prompt as the first message,
+            # not as a separate `system=` argument like Anthropic does.
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Review this diff:\n\n{diff}"},
+        ],
     )
 
-    raw = message.content[0].text.strip()
+    raw = response.choices[0].message.content.strip()
     raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
     try:
