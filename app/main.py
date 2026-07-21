@@ -9,7 +9,10 @@ import hmac
 import os
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse
 
+from app import storage
+from app.dashboard import render_dashboard
 from app.github_client import GitHubClient
 from app.reviewer import review_pull_request
 
@@ -36,6 +39,18 @@ def verify_signature(payload: bytes, signature_header: str | None) -> None:
 @app.get("/healthz")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard() -> str:
+    """The dashboard web page: lists every repo Sentinel has seen."""
+    return render_dashboard(storage.list_repos())
+
+
+@app.get("/api/repos")
+async def api_repos() -> list[dict]:
+    """JSON version of the same data — handy for testing and future frontend JS."""
+    return storage.list_repos()
 
 
 @app.post("/webhook")
@@ -74,6 +89,9 @@ async def handle_pull_request(
     installation_id: int, repo_full_name: str, pr_number: int, head_sha: str
 ) -> None:
     """Fetch the PR diff, run the AI review, post results back to GitHub."""
+    # Remember this repo so it shows up on the dashboard.
+    storage.record_repo_activity(repo_full_name, installation_id)
+
     gh = GitHubClient(installation_id)
 
     diff = await gh.get_pr_diff(repo_full_name, pr_number)
