@@ -47,10 +47,19 @@ Respond with ONLY a JSON object, no markdown fences, in this exact shape:
 added or modified in this diff. If there are no issues, use an empty list."""
 
 
-async def review_pull_request(diff: str, files: list[dict]) -> Review:
+async def review_pull_request(diff: str, files: list[dict], vibe: str = "") -> Review:
     if len(diff) > MAX_DIFF_CHARS:
         # Milestone 4: chunk per-file and merge reviews. For now, truncate.
         diff = diff[:MAX_DIFF_CHARS] + "\n... [diff truncated]"
+
+    # If this repo has a saved "vibe", append it to the system prompt so the
+    # review focuses on what this project actually cares about.
+    system_prompt = SYSTEM_PROMPT
+    if vibe.strip():
+        system_prompt += (
+            f"\n\nProject context from the maintainer — weight your review "
+            f"accordingly:\n{vibe.strip()}"
+        )
 
     client = AsyncOpenAI()  # reads OPENAI_API_KEY from env
     response = await client.chat.completions.create(
@@ -60,7 +69,7 @@ async def review_pull_request(diff: str, files: list[dict]) -> Review:
         messages=[
             # OpenAI carries the system prompt as the first message,
             # not as a separate `system=` argument like Anthropic does.
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Review this diff:\n\n{diff}"},
         ],
     )
