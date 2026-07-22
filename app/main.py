@@ -113,12 +113,19 @@ async def handle_pull_request(
     # Remember this repo so it shows up on the dashboard.
     storage.record_repo_activity(repo_full_name, installation_id)
 
+    # Respect this repo's dashboard settings.
+    settings = storage.get_repo(repo_full_name)["settings"]
+    if not settings["review_enabled"]:
+        # The maintainer switched review off for this repo — stop here.
+        return
+
     gh = GitHubClient(installation_id)
 
     diff = await gh.get_pr_diff(repo_full_name, pr_number)
     files = await gh.get_pr_files(repo_full_name, pr_number)
 
-    review = await review_pull_request(diff, files)
+    # Pass the repo's saved "vibe" so the review focuses on what it cares about.
+    review = await review_pull_request(diff, files, vibe=settings["vibe"])
 
     # Milestone 2: single summary comment.
     await gh.post_issue_comment(repo_full_name, pr_number, review.summary_markdown())
