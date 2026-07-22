@@ -8,8 +8,8 @@ import hashlib
 import hmac
 import os
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import BackgroundTasks, FastAPI, Form, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import storage
 from app.dashboard import render_dashboard
@@ -51,6 +51,27 @@ async def dashboard() -> str:
 async def api_repos() -> list[dict]:
     """JSON version of the same data — handy for testing and future frontend JS."""
     return storage.list_repos()
+
+
+@app.post("/settings")
+async def save_settings(
+    full_name: str = Form(...),
+    review_enabled: str = Form("off"),
+    vibe: str = Form(""),
+) -> RedirectResponse:
+    """Save a repo's settings from the dashboard form, then redirect back.
+
+    The form sends URL-encoded fields (not JSON), so we read them with Form(...).
+    A <select> always sends a value ("on"/"off"), which we turn into a bool.
+    Returning a 303 redirect is the 'Post/Redirect/Get' pattern: after a POST,
+    send the browser to a GET so a page refresh doesn't re-submit the form.
+    """
+    storage.update_settings(
+        full_name,
+        review_enabled=(review_enabled == "on"),
+        vibe=vibe,
+    )
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 
 @app.post("/webhook")
