@@ -18,8 +18,16 @@ bugs, with numbers instead of vibes.
 - **Recall** = TP / (TP + FN) — of the real bugs, how many it caught.
 - **F1** — the balance of the two.
 
+Reported **overall and per-category** (security / correctness / error-handling),
+because a single blended number hides where a reviewer is strong or weak.
+
 Matching is line-based with a small tolerance. A stronger version would use an
 **LLM-as-judge** to match findings to bugs by meaning rather than line number.
+
+## Tracking runs
+`--save` records a run to `evals/results/<reviewer>.json`. On the next run the
+report prints the **delta vs the last saved run** (precision/recall/F1 ▲▼), so
+you can see whether a prompt tweak, model swap, or new technique actually helped.
 
 ## Run it
 ```bash
