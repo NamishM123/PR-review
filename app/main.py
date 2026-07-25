@@ -43,8 +43,18 @@ async def health() -> dict:
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard() -> str:
-    """The dashboard web page: lists every repo Sentinel has seen."""
-    return render_dashboard(storage.list_repos())
+    """The dashboard web page: repos, their settings, stats, and recent reviews."""
+    return render_dashboard(
+        storage.list_repos(),
+        stats=storage.stats(),
+        recent=storage.recent_reviews(limit=8),
+    )
+
+
+@app.get("/api/stats")
+async def api_stats() -> dict:
+    """JSON stats + recent review history."""
+    return {"stats": storage.stats(), "recent": storage.recent_reviews(limit=20)}
 
 
 @app.get("/api/repos")
@@ -129,6 +139,9 @@ async def handle_pull_request(
 
     # Milestone 2: single summary comment.
     await gh.post_issue_comment(repo_full_name, pr_number, review.summary_markdown())
+
+    # Save it so the dashboard can show history and stats.
+    storage.record_review(repo_full_name, pr_number, review.summary, review.comments)
 
     # Milestone 3: inline comments (uncomment once summary flow works).
     # await gh.post_review(repo_full_name, pr_number, head_sha, review)
