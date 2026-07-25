@@ -51,14 +51,56 @@ def _repo_card(repo: dict) -> str:
     </div>"""
 
 
-def render_dashboard(repos: list[dict]) -> str:
-    """Build the full dashboard HTML page from the list of tracked repos."""
+def _stat_tiles(stats: dict) -> str:
+    """The headline numbers: how much work the bot has actually done."""
+    sev = stats.get("by_severity", {})
+    tiles = [
+        ("Reviews run", stats.get("total_reviews", 0)),
+        ("Findings", stats.get("total_findings", 0)),
+        ("Bugs", sev.get("bug", 0)),
+        ("Security", sev.get("security", 0)),
+    ]
+    cells = "".join(
+        f'<div class="tile"><div class="tile-n">{v}</div>'
+        f'<div class="tile-l">{html.escape(label)}</div></div>'
+        for label, v in tiles
+    )
+    return f'<div class="tiles">{cells}</div>'
+
+
+def _recent_list(recent: list[dict]) -> str:
+    """Recent review history — proof of activity over time."""
+    if not recent:
+        return ""
+    rows = ""
+    for r in recent:
+        when = html.escape(r.get("created_at", "")).replace("T", " ").replace("+00:00", "")
+        n = r.get("finding_count", 0)
+        badge = "no issues" if n == 0 else f"{n} finding{'s' if n != 1 else ''}"
+        rows += f"""
+        <li>
+          <code>{html.escape(r['repo'])}</code>
+          <span class="pr">#{r['pr_number']}</span>
+          <span class="badge">{badge}</span>
+          <span class="when">{when}</span>
+        </li>"""
+    return f"""
+    <h2>Recent reviews</h2>
+    <ul class="recent">{rows}</ul>"""
+
+
+def render_dashboard(
+    repos: list[dict], stats: dict | None = None, recent: list[dict] | None = None
+) -> str:
+    """Build the full dashboard HTML page: stats, repo settings, recent history."""
     if repos:
         body = "".join(_repo_card(r) for r in repos)
     else:
         body = """
       <p class="muted">No repos yet. Once Sentinel reviews a PR on a repo it's
       installed on, it'll show up here automatically.</p>"""
+
+    body = _stat_tiles(stats or {}) + body + _recent_list(recent or [])
 
     return f"""<!doctype html>
 <html lang="en">
@@ -86,6 +128,22 @@ def render_dashboard(repos: list[dict]) -> str:
               padding: 9px 18px; font-size: 0.95rem; cursor: pointer; }}
     button:hover {{ background: #333; }}
     .muted {{ color: #999; }}
+    .tiles {{ display: flex; gap: 10px; margin: 18px 0 22px; flex-wrap: wrap; }}
+    .tile {{ flex: 1; min-width: 110px; background: #fff; border: 1px solid #eee;
+             border-radius: 10px; padding: 14px 16px; }}
+    .tile-n {{ font-size: 1.7rem; font-weight: 600; line-height: 1.1; }}
+    .tile-l {{ font-size: 0.75rem; color: #888; text-transform: uppercase;
+               letter-spacing: 0.04em; margin-top: 2px; }}
+    h2 {{ font-size: 1rem; margin: 28px 0 8px; color: #444; }}
+    ul.recent {{ list-style: none; padding: 0; margin: 0; }}
+    ul.recent li {{ background: #fff; border: 1px solid #eee; border-radius: 8px;
+                    padding: 10px 14px; margin-bottom: 8px; display: flex;
+                    align-items: center; gap: 10px; flex-wrap: wrap;
+                    font-size: 0.9rem; }}
+    .pr {{ color: #666; }}
+    .badge {{ background: #f0f0f2; border-radius: 20px; padding: 2px 10px;
+              font-size: 0.78rem; color: #555; }}
+    .when {{ margin-left: auto; color: #aaa; font-size: 0.8rem; }}
   </style>
 </head>
 <body>

@@ -10,8 +10,10 @@ update_settings) keep the SAME shapes they had with the JSON version, so
 nothing that calls this file had to change.
 """
 
+import json
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Where the database file lives. Overridable via env var.
@@ -33,6 +35,25 @@ def _connect() -> sqlite3.Connection:
             review_count    INTEGER NOT NULL DEFAULT 0
         )
         """
+    )
+    # One row per review the bot has posted. `repo` links back to repos.full_name
+    # (a foreign key), so a repo has many reviews — a one-to-many relationship.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reviews (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo           TEXT    NOT NULL,
+            pr_number      INTEGER NOT NULL,
+            created_at     TEXT    NOT NULL,   -- ISO timestamp
+            summary        TEXT    NOT NULL DEFAULT '',
+            finding_count  INTEGER NOT NULL DEFAULT 0,
+            severities     TEXT    NOT NULL DEFAULT '{}'  -- JSON: {"bug": 2, ...}
+        )
+        """
+    )
+    # Index the columns we filter/sort by, so history lookups stay fast as rows grow.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_reviews_repo ON reviews(repo, created_at DESC)"
     )
     return conn
 
@@ -95,7 +116,7 @@ def update_settings(
 ) -> None:
     """Change a repo's settings. Only the arguments you pass are updated.
 
-    (Not used yet — this is what Phase 2's dashboard 'save' button will call.)
+    Called by the dashboard's save button (POST /settings).
     """
     fields, values = [], []
     if review_enabled is not None:
@@ -110,3 +131,89 @@ def update_settings(
     with _connect() as conn:
         conn.execute(f"UPDATE repos SET {', '.join(fields)} WHERE full_name = ?", values)
         conn.commit()
+
+
+# --------------------------------------------------------------- review history
+
+
+def record_review(repo: str, pr_number: int, summary: str, comments: list) -> None:
+    """Save one completed review so the dashboard can show history and stats.
+
+    `comments` is the list of InlineComment objects from the Review; we store a
+    count plus a per-severity tally (as JSON) rather than every comment body —
+    enough for stats without bloating the table.
+    """
+    severities: dict[str, int] = {}
+    for c in comments:
+        sev = getattr(c, "severity", "unknown")
+        severities[sev] = severities.get(sev, 0) + 1
+
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO reviews (repo, pr_number, created_at, summary,
+                                 finding_count, severities)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                repo,
+                pr_number,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                summary[:500],
+                len(comments),
+                json.dumps(severities),
+            ),
+        )
+        conn.commit()
+
+
+def _review_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "repo": row["repo"],
+        "pr_number": row["pr_number"],
+        "created_at": row["created_at"],
+        "summary": row["summary"],
+        "finding_count": row["finding_count"],
+        "severities": json.loads(row["severities"] or "{}"),
+    }
+
+
+def recent_reviews(repo: str | None = None, limit: int = 10) -> list[dict]:
+    """Most recent reviews, newest first — all repos, or just one."""
+    with _connect() as conn:
+        if repo:
+            rows = conn.execute(
+                "SELECT * FROM reviews WHERE repo = ? ORDER BY created_at DESC LIMIT ?",
+                (repo, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM reviews ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+    return [_review_row(r) for r in rows]
+
+
+def stats() -> dict:
+    """Aggregate numbers for the dashboard header.
+
+    COUNT/SUM are SQL aggregate functions: they compute over many rows and
+    return a single value — much faster than pulling every row into Python.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS reviews, COALESCE(SUM(finding_count), 0) AS findings"
+            " FROM reviews"
+        ).fetchone()
+        sev_rows = conn.execute("SELECT severities FROM reviews").fetchall()
+
+    by_severity: dict[str, int] = {}
+    for r in sev_rows:
+        for sev, n in json.loads(r["severities"] or "{}").items():
+            by_severity[sev] = by_severity.get(sev, 0) + n
+
+    return {
+        "total_reviews": row["reviews"],
+        "total_findings": row["findings"],
+        "by_severity": by_severity,
+    }
