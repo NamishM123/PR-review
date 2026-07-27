@@ -14,16 +14,26 @@ import jwt  # pip install PyJWT
 
 APP_ID = os.environ.get("GITHUB_APP_ID", "")
 PRIVATE_KEY_PATH = os.environ.get("GITHUB_PRIVATE_KEY_PATH", "private-key.pem")
+# Deployed environments have no filesystem to drop a .pem on, so the key can
+# also be supplied directly as an env var. Newlines are often flattened to the
+# literal characters \n when pasting into a dashboard, so we restore them.
+PRIVATE_KEY = os.environ.get("GITHUB_PRIVATE_KEY", "")
 
 API = "https://api.github.com"
 
 
-def _app_jwt() -> str:
+def _private_key() -> bytes:
+    """The GitHub App private key: from the env var if set, else from the file."""
+    if PRIVATE_KEY:
+        return PRIVATE_KEY.replace("\\n", "\n").encode()
     with open(PRIVATE_KEY_PATH, "rb") as f:
-        private_key = f.read()
+        return f.read()
+
+
+def _app_jwt() -> str:
     now = int(time.time())
     payload = {"iat": now - 60, "exp": now + 9 * 60, "iss": APP_ID}
-    return jwt.encode(payload, private_key, algorithm="RS256")
+    return jwt.encode(payload, _private_key(), algorithm="RS256")
 
 
 class GitHubClient:

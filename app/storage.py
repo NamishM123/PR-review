@@ -16,8 +16,21 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Where the database file lives. Overridable via env var.
-DB_FILE = Path(os.environ.get("SENTINEL_DB_FILE", "data/sentinel.db"))
+# Where the database file lives.
+#
+# Serverless platforms (Vercel/Lambda) ship a read-only filesystem with only
+# /tmp writable, so we fall back there when we detect one. NOTE: /tmp is
+# EPHEMERAL — it is wiped between cold starts, so data does not persist across
+# deploys or idle periods. For durable storage on serverless, point
+# SENTINEL_DB_FILE at a mounted volume, or move to a hosted database
+# (see DEPLOY.md).
+def _default_db_path() -> str:
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return "/tmp/sentinel.db"
+    return "data/sentinel.db"
+
+
+DB_FILE = Path(os.environ.get("SENTINEL_DB_FILE", _default_db_path()))
 
 
 def _connect() -> sqlite3.Connection:
