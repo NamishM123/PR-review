@@ -6,7 +6,27 @@ import os
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
-MODEL = os.environ.get("SENTINEL_MODEL", "gpt-4o")
+# Which LLM provider to use.
+#
+# Groq serves an OpenAI-COMPATIBLE API, so the same `openai` SDK works for both
+# — only the base URL, key, and model name differ. If GROQ_API_KEY is set we use
+# Groq; otherwise we fall back to OpenAI. LLM_BASE_URL overrides either, so any
+# other OpenAI-compatible provider (Together, OpenRouter, a local server) works
+# too without code changes.
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+_groq_key = os.environ.get("GROQ_API_KEY", "")
+USING_GROQ = bool(_groq_key)
+
+API_KEY = _groq_key or os.environ.get("OPENAI_API_KEY", "")
+BASE_URL = os.environ.get("LLM_BASE_URL") or (GROQ_BASE_URL if USING_GROQ else None)
+
+# Default model depends on the provider (their model names are different).
+MODEL = os.environ.get(
+    "SENTINEL_MODEL",
+    "llama-3.3-70b-versatile" if USING_GROQ else "gpt-4o",
+)
+
 MAX_DIFF_CHARS = 60_000  # naive chunking guard for milestone 2
 
 
@@ -61,13 +81,14 @@ async def review_pull_request(diff: str, files: list[dict], vibe: str = "") -> R
             f"accordingly:\n{vibe.strip()}"
         )
 
-    client = AsyncOpenAI()  # reads OPENAI_API_KEY from env
+    # Same SDK for both providers — only base_url/key/model differ.
+    client = AsyncOpenAI(api_key=API_KEY, base_url=BASE_URL)
     response = await client.chat.completions.create(
         model=MODEL,
         max_tokens=2000,
-        response_format={"type": "json_object"},  # ask OpenAI to guarantee valid JSON
+        response_format={"type": "json_object"},  # ask for guaranteed-valid JSON
         messages=[
-            # OpenAI carries the system prompt as the first message,
+            # These APIs carry the system prompt as the first message,
             # not as a separate `system=` argument like Anthropic does.
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Review this diff:\n\n{diff}"},
