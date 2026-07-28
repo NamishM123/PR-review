@@ -15,8 +15,17 @@ In **Project → Settings → Environment Variables**, add:
 | `GITHUB_APP_ID` | your GitHub App's ID |
 | `GITHUB_WEBHOOK_SECRET` | the webhook secret you generated |
 | `GITHUB_PRIVATE_KEY` | the **contents** of your `.pem` file (see below) |
-| `OPENAI_API_KEY` | your OpenAI key |
-| `SENTINEL_MODEL` | e.g. `gpt-4o` (optional) |
+| `GROQ_API_KEY` | your Groq key (or use `OPENAI_API_KEY` instead) |
+| `SENTINEL_MODEL` | optional — defaults to `llama-3.3-70b-versatile` on Groq, `gpt-4o` on OpenAI |
+
+**Choosing a provider:** Groq serves an OpenAI-compatible API, so the same SDK
+works for both. Set **`GROQ_API_KEY`** to use Groq, or **`OPENAI_API_KEY`** to
+use OpenAI — the app picks whichever is present (Groq wins if both are set).
+`LLM_BASE_URL` overrides the endpoint for any other compatible provider.
+
+Groq model names change over time; if you get a "model not found" error, check
+the current list at <https://console.groq.com/docs/models> and set
+`SENTINEL_MODEL` accordingly.
 
 **About the private key:** there's no filesystem to drop a `.pem` on, so paste
 the key itself into `GITHUB_PRIVATE_KEY`. If your input box flattens newlines,
